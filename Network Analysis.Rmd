@@ -1,0 +1,65 @@
+---
+title: "Network Analysis"
+author: "Samuel Elzinga"
+date: "3/30/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+library(tidyverse)
+library(tidygraph)
+library(ggraph)
+library(ggrepel)
+
+alliance.base <- read.csv("atop5_0ddyr.csv")
+
+COW.Country.Codes <- read.csv("COW country codes.csv") %>% na.omit
+
+alliance.base <- alliance.base %>% filter(stateA == "700" | stateA == "701" | stateA == "702" | stateA == "703" | stateA == "704" | stateA == "705" | stateB == "700" | stateB == "701" | stateB == "702" | stateB == "703" | stateB == "704" | stateB == "705") %>%
+  rename("CCode" = stateA)
+alliance.base.just.CA <- alliance.base %>% filter(stateB == "700" | stateB == "701" | stateB == "702" | stateB == "703" | stateB == "704" | stateB == "705")
+
+alliance.cleaned <- alliance.base %>% inner_join(COW.Country.Codes, by = "CCode")
+
+COW.Country.Codes <-  COW.Country.Codes %>% rename("stateB" = "CCode")
+
+alliance.cleaned <- alliance.cleaned %>% left_join(COW.Country.Codes, by = "stateB")
+
+
+
+alliance.cleaned <- alliance.cleaned %>% filter(StateNme.x == "Russia" | StateNme.x == "United States of America" | StateNme.x == "China" | StateNme.x == "Pakistan" | StateNme.x == "Kazakhstan" | StateNme.x == "Kyrgyzstan" | StateNme.x == "Tajikistan" | StateNme.x == "Turkmenistan" | StateNme.x == "Uzbekistan" | StateNme.x == "Afghanistan" | StateNme.x == "India" | StateNme.x == "Iran") 
+
+alliance.cleaned <- alliance.cleaned %>% filter(StateNme.y == "Russia" | StateNme.y == "United States of America" | StateNme.y == "China" | StateNme.y == "Pakistan" | StateNme.y == "Kazakhstan" | StateNme.y == "Kyrgyzstan" | StateNme.y == "Tajikistan" | StateNme.y == "Turkmenistan" | StateNme.y == "Uzbekistan" | StateNme.y == "Afghanistan" | StateNme.y == "India" | StateNme.y == "Iran")
+
+countries <- unique(alliance.cleaned$StateNme.y) %>% as.data.frame() %>% rowid_to_column("id") %>% rename("Country" = ".")
+
+agreements <- alliance.cleaned %>% group_by(StateNme.x, StateNme.y) %>% summarise(weight = n()) %>% ungroup() %>% rowid_to_column("id")
+
+edges <- agreements %>% left_join(countries, by = c("StateNme.x" = "Country")) %>% rename("stateA" = "id.y")
+edges <- edges %>% left_join(countries, by = c("StateNme.y" = "Country")) %>% rename("stateB" = "id")
+edges <- edges %>% select(stateA, stateB, weight)
+
+counts <- agreements %>% count(StateNme.x)
+counts2 <- agreements %>% count(StateNme.y)
+counts <- counts$n + counts2$n
+counts <- counts %>% cbind(counts2$StateNme.y) %>% as.data.frame() %>%  rename("size_weights" = ".")
+counts <- counts %>% arrange(size_weights)
+countries <- countries %>% left_join(counts, by = c("Country" = "V2"))
+countries <- transform(countries, size_weights = as.numeric(size_weights))
+countries <- countries %>% as.data.frame %>% arrange(size_weights, .by_group = F)
+in.central.asia <- c("No", "No", "Yes", "No", "No", "No", "No", "Yes", "Yes", "Yes", "Yes", "Yes")
+countries <- countries %>% cbind(in.central.asia)
+
+tidy.ca.network <- tbl_graph(nodes = countries, edges = edges, directed = T)
+tidy.ca.network <- tidy.ca.network %>% activate(edges)
+
+ggnetwork <- ggraph(tidy.ca.network, layout = "star") + geom_edge_link(aes(width = weight), color = "grey66", alpha = 0.6) + labs(edge_width = "Total Treaties Signed") + theme_graph()
+  
+  
+ggnetwork <- ggnetwork + geom_node_point(shape = 21, aes(size = size_weights, fill = as.factor(in.central.asia))) + geom_node_text(aes(label = Country)) + scale_edge_width(range = c(0.2, 2.3)) + labs(size = "Number of Different States Partnered With", fill = "In Central Asia?") + theme(legend.position = "bottom", legend.direction = "vertical", plot.title = element_text(hjust = 0.5)) + ggtitle("Diversity of Central Asian Military Treaties")
+
+ggnetwork
+
+ggsave("ggnetwork.png", plot = ggnetwork, dpi = 300, units = "in", width = 8, height = 10)
+```
